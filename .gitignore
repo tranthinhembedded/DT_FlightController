@@ -1,0 +1,21 @@
+# Build outputs
+Debug/
+Release/
+
+# Generated binaries and intermediate files
+*.elf
+*.map
+*.list
+*.hex
+*.bin
+*.o
+*.d
+*.su
+*.cyclo
+
+# Local editor settings
+.vscode/
+
+# OS files
+Thumbs.db
+.DS_Store
