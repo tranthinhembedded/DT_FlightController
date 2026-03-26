@@ -2,6 +2,7 @@
 
 #include "platform/i2c.h"
 #include "platform/spi.h"
+#include "platform/delay.h"
 
 volatile uint8_t imu_scan_detected = 0U;
 volatile uint8_t imu_scan_who_am_i = 0U;
@@ -46,7 +47,9 @@ static void Sensors_Scan_UpdateCombinedStatus(void)
     sensors_scan_all_detected =
         ((imu_scan_detected != 0U) &&
          (compass_scan_detected != 0U) &&
-         (bmp280_scan_detected != 0U)) ? 1U : 0U;
+         (bmp280_scan_detected != 0U))
+            ? 1U
+            : 0U;
 }
 
 static void IMU_Scan_Select(void)
@@ -61,11 +64,12 @@ static void IMU_Scan_Deselect(void)
 
 static HAL_StatusTypeDef IMU_Scan_ReadRegister(uint8_t reg, uint8_t *value)
 {
-    uint8_t tx_buffer[2] = { (uint8_t)(reg | ICM20602_SPI_READ_MASK), 0x00U };
-    uint8_t rx_buffer[2] = { 0U, 0U };
+    uint8_t tx_buffer[2] = {(uint8_t)(reg | ICM20602_SPI_READ_MASK), 0x00U};
+    uint8_t rx_buffer[2] = {0U, 0U};
     HAL_StatusTypeDef status;
 
-    if (value == NULL) {
+    if (value == NULL)
+    {
         return HAL_ERROR;
     }
 
@@ -73,7 +77,8 @@ static HAL_StatusTypeDef IMU_Scan_ReadRegister(uint8_t reg, uint8_t *value)
     status = HAL_SPI_TransmitReceive(&hspi1, tx_buffer, rx_buffer, 2U, ICM20602_SPI_TRANSFER_TIMEOUT_MS);
     IMU_Scan_Deselect();
 
-    if (status == HAL_OK) {
+    if (status == HAL_OK)
+    {
         *value = rx_buffer[1];
     }
 
@@ -84,7 +89,8 @@ static HAL_StatusTypeDef BMP280_Scan_ReadRegister(uint8_t dev_addr_7bit, uint8_t
 {
     HAL_StatusTypeDef status;
 
-    if (value == NULL) {
+    if (value == NULL)
+    {
         return HAL_ERROR;
     }
 
@@ -114,7 +120,7 @@ void IMU_Scan_Init(void)
     sensors_scan_all_detected = 0U;
 
     IMU_Scan_Deselect();
-    HAL_Delay(100U);
+    Delay_ms_blocking(100U);
 }
 
 void Compass_Scan_Init(void)
@@ -160,13 +166,17 @@ HAL_StatusTypeDef IMU_Scan_Probe(void)
     imu_scan_attempt_count++;
     imu_scan_last_hal_status = (uint8_t)status;
 
-    if (status == HAL_OK) {
+    if (status == HAL_OK)
+    {
         imu_scan_who_am_i = who_am_i;
         imu_scan_detected = (who_am_i == imu_scan_expected_who_am_i) ? 1U : 0U;
-        if (imu_scan_detected != 0U) {
+        if (imu_scan_detected != 0U)
+        {
             imu_scan_match_count++;
         }
-    } else {
+    }
+    else
+    {
         imu_scan_detected = 0U;
     }
 
@@ -185,7 +195,8 @@ HAL_StatusTypeDef Compass_Scan_Probe(void)
     compass_scan_last_probe_tick_ms = HAL_GetTick();
     compass_scan_attempt_count++;
 
-    for (uint8_t addr = I2C_SCAN_START_ADDR_7BIT; addr <= I2C_SCAN_END_ADDR_7BIT; addr++) {
+    for (uint8_t addr = I2C_SCAN_START_ADDR_7BIT; addr <= I2C_SCAN_END_ADDR_7BIT; addr++)
+    {
         HAL_StatusTypeDef status;
 
         compass_scan_last_addr_7bit = addr;
@@ -194,20 +205,24 @@ HAL_StatusTypeDef Compass_Scan_Probe(void)
                                        1U,
                                        HMC5883L_I2C_PROBE_TIMEOUT_MS);
 
-        if (addr == compass_scan_expected_addr_7bit) {
+        if (addr == compass_scan_expected_addr_7bit)
+        {
             expected_status = status;
             compass_scan_last_hal_status = (uint8_t)status;
         }
 
-        if (status == HAL_OK) {
+        if (status == HAL_OK)
+        {
             compass_scan_device_count++;
 
-            if (compass_scan_found_addr_7bit == 0xFFU) {
+            if (compass_scan_found_addr_7bit == 0xFFU)
+            {
                 compass_scan_found_addr_7bit = addr;
                 compass_scan_found_addr_8bit = (uint8_t)(addr << 1);
             }
 
-            if (addr == compass_scan_expected_addr_7bit) {
+            if (addr == compass_scan_expected_addr_7bit)
+            {
                 compass_scan_detected = 1U;
                 compass_scan_found_addr_7bit = addr;
                 compass_scan_found_addr_8bit = (uint8_t)(addr << 1);
@@ -225,8 +240,7 @@ HAL_StatusTypeDef BMP280_Scan_Probe(void)
     HAL_StatusTypeDef final_status = HAL_ERROR;
     const uint8_t candidate_addrs[2] = {
         BMP280_I2C_ADDR_7BIT_PRIMARY,
-        BMP280_I2C_ADDR_7BIT_SECONDARY
-    };
+        BMP280_I2C_ADDR_7BIT_SECONDARY};
 
     bmp280_scan_detected = 0U;
     bmp280_scan_found_addr_7bit = 0xFFU;
@@ -236,7 +250,8 @@ HAL_StatusTypeDef BMP280_Scan_Probe(void)
     bmp280_scan_last_probe_tick_ms = HAL_GetTick();
     bmp280_scan_attempt_count++;
 
-    for (uint32_t i = 0U; i < 2U; i++) {
+    for (uint32_t i = 0U; i < 2U; i++)
+    {
         uint8_t addr = candidate_addrs[i];
         uint8_t chip_id = 0U;
         HAL_StatusTypeDef ready_status;
@@ -252,7 +267,8 @@ HAL_StatusTypeDef BMP280_Scan_Probe(void)
         bmp280_scan_last_hal_status = (uint8_t)ready_status;
         final_status = ready_status;
 
-        if (ready_status != HAL_OK) {
+        if (ready_status != HAL_OK)
+        {
             continue;
         }
 
@@ -260,13 +276,15 @@ HAL_StatusTypeDef BMP280_Scan_Probe(void)
         bmp280_scan_last_hal_status = (uint8_t)read_status;
         final_status = read_status;
 
-        if (read_status != HAL_OK) {
+        if (read_status != HAL_OK)
+        {
             continue;
         }
 
         bmp280_scan_chip_id = chip_id;
 
-        if (chip_id == bmp280_scan_expected_chip_id) {
+        if (chip_id == bmp280_scan_expected_chip_id)
+        {
             bmp280_scan_detected = 1U;
             bmp280_scan_found_addr_7bit = addr;
             bmp280_scan_found_addr_8bit = (uint8_t)(addr << 1);

@@ -13,6 +13,7 @@
 #include "platform/i2c.h"
 #include "platform/spi.h"
 #include "platform/delay.h"
+#include "platform/tim.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "sensor/imu_scan.h"
@@ -51,6 +52,7 @@ int main(void)
 
   MX_DMA_Init();
   MX_GPIO_Init();
+  MX_TIM2_Init();
   MX_I2C1_Init();
   MX_SPI1_Init();
   Delay_Init();
