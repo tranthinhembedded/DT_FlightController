@@ -1,9 +1,9 @@
 /* USER CODE BEGIN Header */
 /**
-  * @file           : main.c
-  * @brief          : FLIGHT CONTROLLER - RC RECEIVER READY
-  * Updated         : iNav Style Support & Physical RC Setup
-  */
+ * @file           : main.c
+ * @brief          : FLIGHT CONTROLLER - RC RECEIVER READY
+ * Updated         : iNav Style Support & Physical RC Setup
+ */
 /* USER CODE END Header */
 
 /* Includes ------------------------------------------------------------------*/
@@ -12,7 +12,7 @@
 #include "platform/gpio.h"
 #include "platform/i2c.h"
 #include "platform/spi.h"
-
+#include "platform/delay.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "sensor/imu_scan.h"
@@ -41,9 +41,9 @@ void SystemClock_Config(void);
 /* USER CODE END 0 */
 
 /**
-  * @brief  The application entry point.
-  * @retval int
-  */
+ * @brief  The application entry point.
+ * @retval int
+ */
 int main(void)
 {
   HAL_Init();
@@ -53,6 +53,7 @@ int main(void)
   MX_GPIO_Init();
   MX_I2C1_Init();
   MX_SPI1_Init();
+  Delay_Init();
 
   /* USER CODE BEGIN 2 */
   /*
@@ -76,16 +77,17 @@ int main(void)
    * Throttle = 1000.0f;
    */
 
-  HAL_Delay(100U);
+  Delay_ms_blocking(100U);
   IMU_Scan_Init();
   Compass_Scan_Init();
+  BMP280_Scan_Init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
   while (1)
   {
-    /* USER CODE BEGIN WHILE */
-    #if 0
+/* USER CODE BEGIN WHILE */
+#if 0
     // 1. Capture Cycle Time (Loop Pacing)
     current_time = TIM2->CNT;
     dt = current_time - prev_time;
@@ -150,17 +152,21 @@ int main(void)
     // 7. Precise Loop Pacing (Đảm bảo Loop 1000Hz - 1000us)
     while ((TIM2->CNT - current_time) < 1000);
 
-    #endif
+#endif
 
     (void)IMU_Scan_Probe();
-    if ((HAL_GetTick() - last_compass_scan_tick) >= 250U) {
+
+    if ((HAL_GetTick() - last_compass_scan_tick) >= 250U)
+    {
       last_compass_scan_tick = HAL_GetTick();
       (void)Compass_Scan_Probe();
+      (void)BMP280_Scan_Probe();
     }
 
-    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, (imu_scan_detected != 0U) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13,
+                      (sensors_scan_all_detected != 0U) ? GPIO_PIN_RESET : GPIO_PIN_SET);
 
-    HAL_Delay(20U);
+    Delay_ms_blocking(20U);
 
     /* USER CODE END WHILE */
 
@@ -170,9 +176,9 @@ int main(void)
 }
 
 /**
-  * @brief System Clock Configuration
-  * @retval None
-  */
+ * @brief System Clock Configuration
+ * @retval None
+ */
 void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
@@ -194,8 +200,7 @@ void SystemClock_Config(void)
     Error_Handler();
   }
 
-  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
@@ -211,9 +216,9 @@ void SystemClock_Config(void)
 /* USER CODE END 4 */
 
 /**
-  * @brief  This function is executed in case of error occurrence.
-  * @retval None
-  */
+ * @brief  This function is executed in case of error occurrence.
+ * @retval None
+ */
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
@@ -225,14 +230,14 @@ void Error_Handler(void)
   /* USER CODE END Error_Handler_Debug */
 }
 
-#ifdef  USE_FULL_ASSERT
+#ifdef USE_FULL_ASSERT
 /**
-  * @brief  Reports the name of the source file and the source line number
-  *         where the assert_param error has occurred.
-  * @param  file: pointer to the source file name
-  * @param  line: assert_param error line source number
-  * @retval None
-  */
+ * @brief  Reports the name of the source file and the source line number
+ *         where the assert_param error has occurred.
+ * @param  file: pointer to the source file name
+ * @param  line: assert_param error line source number
+ * @retval None
+ */
 void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */
