@@ -9,22 +9,13 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "platform/dma.h"
-#include "platform/i2c.h"
-#include "platform/tim.h"
-#include "platform/usart.h"
 #include "platform/gpio.h"
+#include "platform/i2c.h"
+#include "platform/spi.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "arm_math.h"
-#include <string.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include "sensor/imu_config.h"
-#include "control/motor_control.h"
-#include "control/flight_control.h"
-#include "comm/telemetry.h"
-#include "input/rc_input.h"
+#include "sensor/imu_scan.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -37,8 +28,7 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
-uint32_t current_time, prev_time, dt;
-uint32_t max_dt = 0;
+static uint32_t last_compass_scan_tick = 0U;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -48,10 +38,6 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-void Delay_us1(uint32_t us) {
-	uint32_t start = TIM2->CNT;
-	while ((TIM2->CNT - start) < us);
-}
 /* USER CODE END 0 */
 
 /**
@@ -63,61 +49,43 @@ int main(void)
   HAL_Init();
   SystemClock_Config();
 
-  MX_GPIO_Init();
   MX_DMA_Init();
-  MX_TIM2_Init();
-  MX_TIM3_Init();
-  MX_TIM4_Init();
+  MX_GPIO_Init();
   MX_I2C1_Init();
-  MX_USART1_UART_Init();
+  MX_SPI1_Init();
 
   /* USER CODE BEGIN 2 */
-  HAL_TIM_Base_Start(&htim2); // Start Timer 2 first for Delay_us
+  /*
+   * Legacy flight stack bring-up is temporarily disabled while we validate
+   * the ICM-20602 connection on SPI1.
+   *
+   * HAL_TIM_Base_Start(&htim2);
+   * HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13); Delay_us1(100000);
+   * HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13); Delay_us1(100000);
+   * HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+   * HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+   * HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
+   * HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
+   * HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_2);
+   * MPU6050_Init();
+   * HMC5883L_Init();
+   * MPU6050_Calibrate();
+   * RESET_ALL_PID();
+   * enable_motor = 0;
+   * ARM_Status = NOT_ARM;
+   * Throttle = 1000.0f;
+   */
 
-  HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13); Delay_us1(100000);
-  HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13); Delay_us1(100000);
-  HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
-
-  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
-  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
-  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
-  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_2);
-
-
-  /* HAL_TIM_IC_Start_IT(&htim5, TIM_CHANNEL_1); // Roll
-  HAL_TIM_IC_Start_IT(&htim5, TIM_CHANNEL_2); // Pitch
-  HAL_TIM_IC_Start_IT(&htim5, TIM_CHANNEL_3); // Throttle
-  HAL_TIM_IC_Start_IT(&htim5, TIM_CHANNEL_4); // Yaw
-
-  HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_1); // SW Arm
-  HAL_TIM_IC_Start_IT(&htim1, TIM_CHANNEL_4); // SW Mode */
-
-  TIM3->CCR1 = 1000; TIM3->CCR2 = 1000; TIM4->CCR1 = 1000; TIM4->CCR2 = 1000;
-
-  MPU6050_Init();
-  HMC5883L_Init();
-  MPU6050_Calibrate();
-  RESET_ALL_PID();
-  current_time = TIM2->CNT;
-  enable_motor = 0;
-  ARM_Status = NOT_ARM;
-  Throttle = 1000.0f;
-
-  // Initialize RC values to neutral/min since RC is disabled
-  RC_Raw_Roll = 1500;
-  RC_Raw_Pitch = 1500;
-  RC_Raw_Yaw = 1500;
-  RC_Raw_Throttle = 1000;
-  RC_Raw_SW_Arm = 1000;
-  RC_Raw_SW_Mode = 1000;
-
-  // UART1_StartRxToIdle_DMA();
+  HAL_Delay(100U);
+  IMU_Scan_Init();
+  Compass_Scan_Init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
   while (1)
   {
     /* USER CODE BEGIN WHILE */
+    #if 0
     // 1. Capture Cycle Time (Loop Pacing)
     current_time = TIM2->CNT;
     dt = current_time - prev_time;
@@ -181,6 +149,18 @@ int main(void)
 
     // 7. Precise Loop Pacing (Đảm bảo Loop 1000Hz - 1000us)
     while ((TIM2->CNT - current_time) < 1000);
+
+    #endif
+
+    (void)IMU_Scan_Probe();
+    if ((HAL_GetTick() - last_compass_scan_tick) >= 250U) {
+      last_compass_scan_tick = HAL_GetTick();
+      (void)Compass_Scan_Probe();
+    }
+
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, (imu_scan_detected != 0U) ? GPIO_PIN_SET : GPIO_PIN_RESET);
+
+    HAL_Delay(20U);
 
     /* USER CODE END WHILE */
 
