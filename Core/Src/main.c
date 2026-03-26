@@ -1,8 +1,7 @@
 /* USER CODE BEGIN Header */
 /**
  * @file           : main.c
- * @brief          : FLIGHT CONTROLLER - RC RECEIVER READY
- * Updated         : iNav Style Support & Physical RC Setup
+ * @brief          : FLIGHT CONTROLLER - RUNTIME SENSOR LOOP RESTORED
  */
 /* USER CODE END Header */
 
@@ -11,12 +10,24 @@
 #include "platform/dma.h"
 #include "platform/gpio.h"
 #include "platform/i2c.h"
-#include "platform/spi.h"
-#include "platform/delay.h"
 #include "platform/tim.h"
+#include "platform/usart.h"
+#include "platform/delay.h"
+#include "platform/spi.h"
+
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "sensor/imu_scan.h"
+#include "arm_math.h"
+#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
+
+#include "sensor/imu_config.h"
+#include "sensor/check_sensor_health.h"
+#include "control/motor_control.h"
+#include "control/flight_control.h"
+#include "comm/telemetry.h"
+#include "input/rc_input.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -29,13 +40,12 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
-static uint32_t last_compass_scan_tick = 0U;
+uint32_t current_time, prev_time, dt;
+uint32_t max_dt = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
-/* USER CODE BEGIN PFP */
-/* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
@@ -53,52 +63,62 @@ int main(void)
   MX_DMA_Init();
   MX_GPIO_Init();
   MX_TIM2_Init();
+  MX_TIM3_Init();
+  MX_TIM4_Init();
   MX_I2C1_Init();
   MX_SPI1_Init();
-  Delay_Init();
+  MX_USART1_UART_Init();
 
   /* USER CODE BEGIN 2 */
-  /*
-   * Legacy flight stack bring-up is temporarily disabled while we validate
-   * the ICM-20602 connection on SPI1.
-   *
-   * HAL_TIM_Base_Start(&htim2);
-   * HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13); Delay_us1(100000);
-   * HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13); Delay_us1(100000);
-   * HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
-   * HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
-   * HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
-   * HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
-   * HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_2);
-   * MPU6050_Init();
-   * HMC5883L_Init();
-   * MPU6050_Calibrate();
-   * RESET_ALL_PID();
-   * enable_motor = 0;
-   * ARM_Status = NOT_ARM;
-   * Throttle = 1000.0f;
-   */
+  Delay_Init();
 
-  Delay_ms_blocking(100U);
-  IMU_Scan_Init();
-  Compass_Scan_Init();
-  BMP280_Scan_Init();
+  SensorHealth_Init();
+  SensorHealth_ProbeAll();
+  SensorHealth_UpdateSafeLed();
+
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim3, TIM_CHANNEL_2);
+  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_2);
+
+  MPU6050_Init();
+  HMC5883L_Init();
+  MPU6050_Calibrate();
+  RESET_ALL_PID();
+
+  current_time = TIM2->CNT;
+  prev_time = current_time;
+  enable_motor = 0;
+  ARM_Status = NOT_ARM;
+  Throttle = 1000.0f;
+
+  /* Initialize RC values to neutral/min since RC runtime is disabled */
+  RC_Raw_Roll = 1500;
+  RC_Raw_Pitch = 1500;
+  RC_Raw_Yaw = 1500;
+  RC_Raw_Throttle = 1000;
+  RC_Raw_SW_Arm = 1000;
+  RC_Raw_SW_Mode = 1000;
+
+  /* UART1_StartRxToIdle_DMA(); */
   /* USER CODE END 2 */
 
   /* Infinite loop */
   while (1)
   {
-/* USER CODE BEGIN WHILE */
-#if 0
+    /* USER CODE BEGIN WHILE */
+
     // 1. Capture Cycle Time (Loop Pacing)
     current_time = TIM2->CNT;
     dt = current_time - prev_time;
     prev_time = current_time;
 
-    if (dt > 2000) dt = 1000;
+    if (dt > 2000U)
+      dt = 1000U;
 
-    // Check max_dt (Lưu giá trị dt lớn nhất, bỏ qua vài vòng lặp đầu nếu cần, nhưng ở đây cứ lưu hết)
-    if (dt > max_dt) max_dt = dt;
+    // Check max_dt
+    if (dt > max_dt)
+      max_dt = dt;
 
     // 2. UART Command (PID Tuning ONLY)
     /* if (line_ready) {
@@ -115,60 +135,42 @@ int main(void)
     static uint16_t loop_sched_count = 0;
     loop_sched_count++;
 
-    // --- MEDIUM LOOP (100Hz) --- Call every 10ms (10 * 1ms = 10 calls)
-    if (loop_sched_count % 10 == 0) {
-        COMPASS_PROCESS();
-        if (MagCal.state == MAG_CAL_DONE) {
-             Complimentary_Filter_Update(&Complimentary_Filter, &HMC5883L_DATA);
-        }
+    // --- MEDIUM LOOP (100Hz) --- Call every 10ms
+    if ((loop_sched_count % 10U) == 0U)
+    {
+      COMPASS_PROCESS();
+      if (MagCal.state == MAG_CAL_DONE)
+      {
+        Complimentary_Filter_Update(&Complimentary_Filter, &HMC5883L_DATA);
+      }
     }
 
-    // --- SLOW LOOP (20Hz) --- Call every 50ms (50 * 1ms = 50 calls)
-    if (loop_sched_count % 50 == 0) {
-        /* if (HAL_GetTick() - last_telemetry_time > 100) { // Keep legacy check just in case or replace logic
-             Send_Telemetry();
-             last_telemetry_time = HAL_GetTick();
-        } */
-        // Other slow checks (Battery, Failsafe) goes here
+    // --- SLOW LOOP (20Hz) --- Call every 50ms
+    if ((loop_sched_count % 50U) == 0U)
+    {
+      /* if (HAL_GetTick() - last_telemetry_time > 100) {
+           Send_Telemetry();
+           last_telemetry_time = HAL_GetTick();
+      } */
+      // Other slow checks (Battery, Failsafe) go here
     }
 
-    // Reset counter to avoid overflow (optional, but good practice if using modulo)
-    if (loop_sched_count >= 1000) loop_sched_count = 0;
-
+    // Reset counter to avoid overflow
+    if (loop_sched_count >= 1000U)
+      loop_sched_count = 0U;
 
     // --- FAST LOOP (1kHz) --- Always runs
-    // 4. Sensor Update (IMU Only for Fast Loop)
     IMU_PROCESS();
 
-    // 5. Update Filter & PID with REAL dt
     MPU6500_DATA.dt = (float32_t)dt * 1.0e-6f;
     Complimentary_Filter_Predict(&Complimentary_Filter, &MPU6500_DATA);
 
-    // Note: Compass Update moved to Medium Loop
-
-    // 6. Control Loop (MPC)
+    // 6. Control Loop
     MPC();
 
-    // 7. Telemetry Moved to Slow Loop
-
-    // 7. Precise Loop Pacing (Đảm bảo Loop 1000Hz - 1000us)
-    while ((TIM2->CNT - current_time) < 1000);
-
-#endif
-
-    (void)IMU_Scan_Probe();
-
-    if ((HAL_GetTick() - last_compass_scan_tick) >= 250U)
-    {
-      last_compass_scan_tick = HAL_GetTick();
-      (void)Compass_Scan_Probe();
-      (void)BMP280_Scan_Probe();
-    }
-
-    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13,
-                      (sensors_scan_all_detected != 0U) ? GPIO_PIN_RESET : GPIO_PIN_SET);
-
-    Delay_ms_blocking(20U);
+    // 7. Precise Loop Pacing (keep 1kHz = 1000us)
+    while ((TIM2->CNT - current_time) < 1000U)
+      ;
 
     /* USER CODE END WHILE */
 
@@ -223,13 +225,10 @@ void SystemClock_Config(void)
  */
 void Error_Handler(void)
 {
-  /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
   while (1)
   {
   }
-  /* USER CODE END Error_Handler_Debug */
 }
 
 #ifdef USE_FULL_ASSERT
@@ -242,9 +241,5 @@ void Error_Handler(void)
  */
 void assert_failed(uint8_t *file, uint32_t line)
 {
-  /* USER CODE BEGIN 6 */
-  /* User can add his own implementation to report the file name and line number,
-     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
-  /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */

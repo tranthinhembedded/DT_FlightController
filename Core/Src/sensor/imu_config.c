@@ -1,4 +1,5 @@
 #include "sensor/imu_config.h"
+#include "platform/delay.h"
 
 // Global variables definition
 IMU_RAW_DATA_t MPU6500_RAW_DATA;
@@ -35,10 +36,6 @@ float32_t gyro_bias[3] = {0.0f, 0.0f, 0.0f};
 float32_t accel_bias[3] = {0.0f, 0.0f, 0.0f};
 uint8_t is_calibrated = 0;
 
-void Delay_us(uint32_t us) {
-	uint32_t start = TIM2->CNT;
-	while ((TIM2->CNT - start) < us);
-}
 void MPU6050_Init(void) {
     uint8_t data;
     data = 0x00; HAL_I2C_Mem_Write(&hi2c1, MPU6050_ADDR, 0x6B, 1, &data, 1, 100);
